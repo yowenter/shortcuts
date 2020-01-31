@@ -126,7 +126,20 @@ class WeReadBook(Finder):
         return bookId
 
 
-b = KindleBook("繁荣")
-b.do()
-b = WeReadBook("繁荣")
-b.do()
+class GroupFinder(Finder):
+    finders = []
+
+    def do(self):
+        result = list()
+        for finder in self.finders:
+            f = finder(self.q)
+            result.extend(f.do())
+        return result
+
+
+class BookGroupFinder(GroupFinder):
+    finders = [WeReadBook, KindleBook]
+
+
+bf = BookGroupFinder("繁荣")
+print(bf.do())
