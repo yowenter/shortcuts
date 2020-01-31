@@ -8,10 +8,12 @@ from bs4 import BeautifulSoup as Soup
 from collections import namedtuple
 from urllib.parse import urljoin
 import sys
+from platform import os
+from copy import copy
 
 Book = namedtuple("Book", ["title", "author", "source", "link"])
 
-Song = namedtuple("Song", ["name"])
+Song = namedtuple("Song", ["name", "artist", "album", "source"])
 
 iPhoneHeaders = {
     "User-Agent":
@@ -33,6 +35,9 @@ class Finder(object):
         resp = self.request()
         items = self.extract_items(resp)
         return items[:limit]
+
+
+################ Find Book #################################
 
 
 class KindleBook(Finder):
@@ -125,23 +130,133 @@ class WeReadBook(Finder):
         # }
         # return n.length < 20 && (n += e.substr(0, 20 - n.length)),
         # n += s.createHash("md5").update(n).digest("hex").substr(0, 3)
-        # TODO 需要破解 bookid 转换成连接的加密算法, 此处暂且忽略
+        # TODO 需要破解 bookid 转换成连接的加密算法, 此处暂且忽略·
         return bookId
+
+
+################ Find Song #################################
+
+
+class XiamiFinder(Finder):
+    def request(self):
+        xiami_headers = copy(iPhoneHeaders)
+        xiami_headers["referer"] = "https://h.xiami.com/index.html?f=&from="
+        resp = requests.get("https://api.xiami.com/web",
+                            headers=xiami_headers,
+                            params={
+                                "v": "2.0",
+                                "app_key": 1,
+                                "key": self.q,
+                                "page": 1,
+                                "limit": 20,
+                                "r": "search/songs"
+                            })
+        return resp
+
+    def extract_items(self, resp):
+        songs = list()
+        data = resp.json()
+        songs_data = data.get("data", {}).get("songs", [])
+        for s in songs_data:
+            songs.append(
+                Song(name=s.get("song_name"),
+                     artist=s.get("artist_name"),
+                     source="虾米音乐",
+                     album=s.get("album_name")))
+        return songs
+
+
+class NetEaseFinder(Finder):
+    def request(self):
+        netEaseHeaders = copy(iPhoneHeaders)
+        netEaseHeaders["referer"] = "https://music.163.com/m/"
+        netEaseHeaders["origin"] = "https://music.163.com"
+        resp = requests.post("http://music.163.com/api/search/get/web",
+                             headers=netEaseHeaders,
+                             params={
+                                 's': self.q,
+                                 'type': 1,
+                                 'offset': 0,
+                                 'limit': 60
+                             })
+        return resp
+
+    def extract_items(self, resp):
+        songs = list()
+        data = resp.json()
+        songs_data = data.get("result", {}).get("songs")
+        for s in songs_data:
+            album = s.get('album', {}).get("name", "")
+            name = s.get("name")
+            artists = s.get("artists", [])
+            if len(artists) < 1:
+                continue
+            artist = artists[0].get("name")
+            songs.append(
+                Song(
+                    name=name,
+                    artist=artist,
+                    album=album,
+                    source="网易音乐",
+                ))
+        return songs
+
+
+class QQMusicFinder(Finder):
+    def request(self):
+        qqHeaders = copy(iPhoneHeaders)
+        qqHeaders['referer'] = "http://m.y.qq.com"
+        resp = requests.get(
+            "http://c.y.qq.com/soso/fcgi-bin/search_for_qq_cp",
+            headers=qqHeaders,
+            params={
+                "w": self.q,
+                "format": "json",
+                "p": 1,
+                "n": 10
+            },
+        )
+        return resp
+
+    def extract_items(self, resp):
+        songs = list()
+        data = resp.json()
+        songs_data = data.get("data", {}).get("song", {}).get("list", [])
+        for item in songs_data:
+            album = item.get("albumname", "")
+            name = item.get("songname", "")
+            artist = ", ".join(
+                [s.get("name", "") for s in item.get("singer", "")])
+
+            songs.append(
+                Song(name=name, artist=artist, album=album, source="QQ 音乐 "))
+        return songs
+
+
+############ 搜索资源聚合 ###################
 
 
 class GroupFinder(Finder):
     finders = []
 
-    def do(self):
+    def do(self, limit=15):
+        avg = int(max(3, limit / len(self.finders)))
         result = list()
         for finder in self.finders:
             f = finder(self.q)
-            result.extend(f.do())
+            result.extend(f.do(limit=avg))
         return result
 
 
 class BookGroupFinder(GroupFinder):
     finders = [WeReadBook, KindleBook]
+
+
+class MusicGroupFinder(GroupFinder):
+    finders = [XiamiFinder, NetEaseFinder, QQMusicFinder]
+
+
+###############################
 
 
 def render_books(books):
@@ -156,15 +271,43 @@ def render_books(books):
         result = result + v
     return result
 
+
+def render_songs(songs):
+    tmpl = """
+   [{source}] {name}, {artist}「{album}」
+   """
+    result = ""
+    for song in songs:
+        v = tmpl.format(name=song.name,
+                        album=song.album,
+                        artist=song.artist,
+                        source=song.source)
+        result = result + v
+    return result
+
+
 #print(sys.argv)
 if len(sys.argv) < 2:
     print("no book provided")
     sys.exit(-1)
-book = sys.argv[1]
-bf = BookGroupFinder(book)
-text=render_books(bf.do())
+query = sys.argv[1]
+if len(sys.argv) > 2:
+    media_type = sys.argv[2]
+
+text = ""
+if media_type.lower() == "song":
+    sf = MusicGroupFinder(query)
+    text = render_songs(sf.do(limit=12))
+else:
+    bf = BookGroupFinder(query)
+    text = render_books(bf.do(limit=12))
 
 # 视图层，用来展示结果。
+# 如果不是 iphone 则退出.
+if "iphone" not in os.uname().machine.lower():
+    print(text)
+    sys.exit(0)
+
 import appex
 from markdown2 import markdown
 import ui
@@ -188,13 +331,13 @@ body {
 </html>
 '''
 
+
 def markdown_view(text):
-	converted = markdown(text)
-	html = TEMPLATE.replace('{{CONTENT}}', converted)
-	webview = ui.WebView(name='Markdown Preview')
-	webview.load_html(html)
-	webview.present()
+    converted = markdown(text)
+    html = TEMPLATE.replace('{{CONTENT}}', converted)
+    webview = ui.WebView(name='搜索结果')
+    webview.load_html(html)
+    webview.present()
+
 
 markdown_view(text)
-
-
