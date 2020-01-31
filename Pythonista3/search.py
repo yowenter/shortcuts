@@ -7,6 +7,7 @@ import requests
 from bs4 import BeautifulSoup as Soup
 from collections import namedtuple
 from urllib.parse import urljoin
+import sys
 
 Book = namedtuple("Book", ["title", "author", "source", "link"])
 
@@ -26,10 +27,10 @@ class Finder(object):
     def extract_items(self, resp):
         raise NotImplementedError
 
-    def do(self):
+    def do(self, limit=5):
         resp = self.request()
         items = self.extract_items(resp)
-        return items
+        return items[:limit]
 
 
 class KindleBook(Finder):
@@ -58,7 +59,7 @@ class KindleBook(Finder):
                 books.append(
                     Book(title=title.text,
                          link=urljoin("https://www.amazon.cn/", link['href']),
-                         source="amazon",
+                         source="Kindle",
                          author=author.text))
         return books
 
@@ -86,7 +87,7 @@ class WeReadBook(Finder):
                 Book(title=bookInfo.get("title"),
                      author=bookInfo.get("author"),
                      link=self.book_link(bookInfo.get("bookId")),
-                     source="weread"))
+                     source="微信读书"))
 
         return books
 
@@ -141,5 +142,23 @@ class BookGroupFinder(GroupFinder):
     finders = [WeReadBook, KindleBook]
 
 
-bf = BookGroupFinder("繁荣")
-print(bf.do())
+def render_books(books):
+    tmpl = """
+    ## {title}
+    {author} [{source}]
+    """
+    result = ""
+    for book in books:
+        v = tmpl.format(title=book.title,
+                        author=book.author,
+                        source=book.source)
+        result = result + v
+    return result
+
+
+if len(sys.argv) < 2:
+    print("no book provided")
+    sys.exit(-1)
+book = sys.argv[1]
+bf = BookGroupFinder(book)
+print(render_books(bf.do()))
