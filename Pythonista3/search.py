@@ -11,6 +11,8 @@ import sys
 
 Book = namedtuple("Book", ["title", "author", "source", "link"])
 
+Song = namedtuple("Song", ["name"])
+
 iPhoneHeaders = {
     "User-Agent":
     "Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 (KHTML, like Gecko) Version/11.0 Mobile/15A372 Safari/604.1"
@@ -123,7 +125,7 @@ class WeReadBook(Finder):
         # }
         # return n.length < 20 && (n += e.substr(0, 20 - n.length)),
         # n += s.createHash("md5").update(n).digest("hex").substr(0, 3)
-        # TODO 需要破解 bookid 转换成连接的加密算法, 此处暂且
+        # TODO 需要破解 bookid 转换成连接的加密算法, 此处暂且忽略
         return bookId
 
 
@@ -162,7 +164,7 @@ book = sys.argv[1]
 bf = BookGroupFinder(book)
 text=render_books(bf.do())
 
-# coding: utf-8
+# 视图层，用来展示结果。
 import appex
 from markdown2 import markdown
 import ui
