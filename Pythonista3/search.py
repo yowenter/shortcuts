@@ -144,9 +144,8 @@ class BookGroupFinder(GroupFinder):
 
 def render_books(books):
     tmpl = """
-    ## {title}
-    {author} [{source}]
-    """
+   [{source}] {title} - {author}
+   """
     result = ""
     for book in books:
         v = tmpl.format(title=book.title,
@@ -155,10 +154,45 @@ def render_books(books):
         result = result + v
     return result
 
-
+#print(sys.argv)
 if len(sys.argv) < 2:
     print("no book provided")
     sys.exit(-1)
 book = sys.argv[1]
 bf = BookGroupFinder(book)
-print(render_books(bf.do()))
+text=render_books(bf.do())
+
+# coding: utf-8
+import appex
+from markdown2 import markdown
+import ui
+
+TEMPLATE = '''
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Preview</title>
+<style type="text/css">
+body {
+	font-family: helvetica;
+	font-size: 15px;
+	margin: 10px;
+}
+</style>
+</head>
+<body>{{CONTENT}}</body>
+</html>
+'''
+
+def markdown_view(text):
+	converted = markdown(text)
+	html = TEMPLATE.replace('{{CONTENT}}', converted)
+	webview = ui.WebView(name='Markdown Preview')
+	webview.load_html(html)
+	webview.present()
+
+markdown_view(text)
+
+
