@@ -10,6 +10,7 @@ from urllib.parse import urljoin
 import sys
 from platform import os
 from copy import copy
+from pygments import highlight
 
 Book = namedtuple("Book", ["title", "author", "source", "link"])
 
@@ -244,7 +245,10 @@ class GroupFinder(Finder):
         result = list()
         for finder in self.finders:
             f = finder(self.q)
-            result.extend(f.do(limit=avg))
+            try:
+            	result.extend(f.do(limit=avg))
+            except Exception as e:
+            	print(str(e))
         return result
 
 
@@ -293,7 +297,9 @@ if len(sys.argv) < 2:
 query = sys.argv[1]
 if len(sys.argv) > 2:
     media_type = sys.argv[2]
-
+else:
+	  media_type = "book"
+#print(sys.argv)
 text = ""
 if media_type.lower() == "song":
     sf = MusicGroupFinder(query)
@@ -325,6 +331,9 @@ body {
 	font-size: 15px;
 	margin: 10px;
 }
+span {
+	color: blue;
+}
 </style>
 </head>
 <body>{{CONTENT}}</body>
@@ -335,9 +344,17 @@ body {
 def markdown_view(text):
     converted = markdown(text)
     html = TEMPLATE.replace('{{CONTENT}}', converted)
+    for w in query:
+    	# 中文高亮
+    	if ord(w)<1000:
+    		continue
+    	html=html.replace(w,'<span>{0}</span>'.format(w))
+    #print(html)
     webview = ui.WebView(name='搜索结果')
     webview.load_html(html)
     webview.present()
+    
+    
 
 
 markdown_view(text)
