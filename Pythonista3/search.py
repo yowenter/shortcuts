@@ -10,6 +10,7 @@ from urllib.parse import urljoin
 import sys
 from platform import os
 from copy import copy
+
 from pygments import highlight
 
 Book = namedtuple("Book", ["title", "author", "source", "link"])
@@ -18,7 +19,7 @@ Song = namedtuple("Song", ["name", "artist", "album", "source"])
 
 iPhoneHeaders = {
     "User-Agent":
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 (KHTML, like Gecko) Version/11.0 Mobile/15A372 Safari/604.1"
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 (KHTML, like Gecko) Version/11.0 Mobile/15A372 Safari/604.1"
 }
 
 
@@ -43,7 +44,7 @@ class Finder(object):
 
 class KindleBook(Finder):
     def request(self):
-        resp = requests.get("https://www.amazon.cn/s",
+        resp = requests.get("https://www.amazon.cn/gp/aw/s/",
                             params={"k": self.q},
                             headers=iPhoneHeaders)
         return resp
@@ -51,24 +52,63 @@ class KindleBook(Finder):
     def extract_items(self, resp):
         books = list()
         soup = Soup(resp.content, features="html.parser")
-        rowsDiv = soup.find("div",
-                            class_="s-result-list s-search-results sg-row")
-        if rowsDiv is None:
-            return books
-        rows = rowsDiv.find_all("div", class_="sg-col-inner")
+        rows = soup.find_all("div", class_="a-section a-spacing-none")
         for row in rows:
-            title = row.find("span",
-                             class_="a-size-base a-color-base a-text-normal")
-            link = row.find("a", title="product-detail")
-            author = row.find("div",
-                              class_="a-row a-size-small a-color-secondary")
+            title = row.find("span", class_="a-size-small a-color-base a-text-normal")
+            # link = row.find("a", title="product-detail")
+            author = row.find("div", class_="a-row a-size-mini a-color-secondary")
 
-            if all([title, link, author]):
+            if title and author:
                 books.append(
-                    Book(title=title.text,
-                         link=urljoin("https://www.amazon.cn/", link['href']),
+                    Book(title=title.text.strip(),
+                         link="",
                          source="Kindle",
-                         author=author.text))
+                         author=author.text.strip()))
+        return books
+
+
+class NetEase163Book(Finder):
+    def request(self):
+        resp = requests.get("https://du.163.com/search/book.json",
+                            params={"word": self.q},
+                            headers=iPhoneHeaders)
+        return resp
+
+    def extract_items(self, resp):
+        books = list()
+        data = resp.json()
+        books_data = data.get("bookWrappers", [])
+        for b in books_data:
+            books.append(Book(title=b.get("book", {}).get("title", ""),
+                              link="",
+                              source="网易蜗牛",
+                              author=b.get("authors", [{}])[0].get("name", ""),
+                              ))
+
+        return books
+
+
+class DuoKanRead(Finder):
+    def request(self):
+        resp = requests.get("https://www.duokan.com/search/%s/1" % self.q,
+                            headers=iPhoneHeaders)
+        return resp
+
+    def extract_items(self, resp):
+        books = list()
+        books = list()
+        soup = Soup(resp.content, features="html.parser")
+        rows = soup.find_all("li", class_="u-bookitm1 j-bookitm")
+        for row in rows:
+            title = row.find("a", class_="title")
+            author = row.find("div", class_="u-author")
+            if title and author:
+                books.append(Book(title=title.text.strip(),
+                                  link="",
+                                  source="多看阅读",
+                                  author=author.text.strip(),
+                                  ))
+
         return books
 
 
@@ -246,14 +286,14 @@ class GroupFinder(Finder):
         for finder in self.finders:
             f = finder(self.q)
             try:
-            	result.extend(f.do(limit=avg))
+                result.extend(f.do(limit=avg))
             except Exception as e:
-            	print(str(e))
+                print(str(e))
         return result
 
 
 class BookGroupFinder(GroupFinder):
-    finders = [WeReadBook, KindleBook]
+    finders = [WeReadBook, KindleBook, NetEase163Book, DuoKanRead]
 
 
 class MusicGroupFinder(GroupFinder):
@@ -290,7 +330,7 @@ def render_songs(songs):
     return result
 
 
-#print(sys.argv)
+# print(sys.argv)
 if len(sys.argv) < 2:
     print("no book provided")
     sys.exit(-1)
@@ -298,8 +338,8 @@ query = sys.argv[1]
 if len(sys.argv) > 2:
     media_type = sys.argv[2]
 else:
-	  media_type = "book"
-#print(sys.argv)
+    media_type = "book"
+# print(sys.argv)
 text = ""
 if media_type.lower() == "song":
     sf = MusicGroupFinder(query)
@@ -345,16 +385,14 @@ def markdown_view(text):
     converted = markdown(text)
     html = TEMPLATE.replace('{{CONTENT}}', converted)
     for w in query:
-    	# 中文高亮
-    	if ord(w)<1000:
-    		continue
-    	html=html.replace(w,'<span>{0}</span>'.format(w))
-    #print(html)
+        # 中文高亮
+        if ord(w) < 1000:
+            continue
+        html = html.replace(w, '<span>{0}</span>'.format(w))
+    # print(html)
     webview = ui.WebView(name='搜索结果')
     webview.load_html(html)
     webview.present()
-    
-    
 
 
 markdown_view(text)
