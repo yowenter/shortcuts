@@ -10,6 +10,8 @@ from urllib.parse import urljoin
 import sys
 from platform import os
 from copy import copy
+import json
+from requests.auth import HTTPBasicAuth
 
 from pygments import highlight
 
@@ -207,6 +209,51 @@ class XiamiFinder(Finder):
         return songs
 
 
+class SpotifyFinder(Finder):
+    def request(self):
+        spotifyHeaders = copy(iPhoneHeaders)
+        session = requests.Session()
+
+        client_id = "sp_id"
+        client_key = "sp_key"
+
+        response = session.post("https://accounts.spotify.com/api/token",
+                                headers=spotifyHeaders, data={"grant_type": "client_credentials"},
+                                auth=HTTPBasicAuth(client_id, client_key))
+        data = response.json()
+
+        access_token = data['access_token']
+
+        spotifyHeaders["referer"] = "https://open.spotify.com/"
+        spotifyHeaders["origin"] = "https://open.spotify.com/"
+        spotifyHeaders["authorization"] = "Bearer " + access_token
+
+        resp = requests.get("https://api.spotify.com/v1/search?",
+                            headers=spotifyHeaders,
+                            params={
+                                'q': self.q,
+                                'type': "album,artist,playlist,track,show_audio,episode_audio",
+                                'include_external': "audio",
+                                'market': "HK",
+                                "limit": 10,
+                                "offset": 0,
+                                "best_match": True,
+                            })
+        return resp
+
+    def extract_items(self, resp):
+        songs = list()
+        data = resp.json()
+        songs_data = data.get("tracks", {}).get("items", [])
+        for s in songs_data:
+            songs.append(
+                Song(name=s.get("name"),
+                     artist=s.get("artists", [{}])[0].get("name", ""),
+                     source="Spotify",
+                     album=s.get("album", {}).get("name", "")))
+        return songs
+
+
 class NetEaseFinder(Finder):
     def request(self):
         netEaseHeaders = copy(iPhoneHeaders)
@@ -297,7 +344,7 @@ class BookGroupFinder(GroupFinder):
 
 
 class MusicGroupFinder(GroupFinder):
-    finders = [XiamiFinder, NetEaseFinder, QQMusicFinder]
+    finders = [XiamiFinder, NetEaseFinder, QQMusicFinder, SpotifyFinder]
 
 
 ###############################
@@ -367,12 +414,12 @@ TEMPLATE = '''
 <title>Preview</title>
 <style type="text/css">
 body {
-	font-family: helvetica;
-	font-size: 15px;
-	margin: 10px;
+    font-family: helvetica;
+    font-size: 15px;
+    margin: 10px;
 }
 span {
-	color: blue;
+    color: blue;
 }
 </style>
 </head>
